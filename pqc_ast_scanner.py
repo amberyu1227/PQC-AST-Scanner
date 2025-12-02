@@ -4,6 +4,8 @@ import os
 import javalang          # 需要安裝: pip install javalang
 import pycparser         # 需要安裝: pip install pycparser
 from pycparser import c_parser, c_ast, parse_file
+import json
+import datetime
 
 # --- PQC 知識庫與修復建議 (PQC_KNOWLEDGE_BASE) ---
 PQC_KNOWLEDGE_BASE = {
@@ -252,6 +254,80 @@ def scan_project_recursive(root_dir):
                     
     return all_findings
 
+# --- CBOM 生成核心 ---
+def generate_cbom(findings, project_path, output_file="cbom.json"):
+    """
+    將掃描發現 (findings) 轉換為結構化的 CBOM JSON 檔案。
+    這裡採用簡化的 CycloneDX 風格結構。
+    """
+    
+    # 1. 建立 CBOM 檔頭資訊 (Metadata)
+    cbom_data = {
+        "bomFormat": "CycloneDX",  # 標示格式 (雖然我們是簡化版)
+        "specVersion": "1.4",
+        "serialNumber": f"urn:uuid:{os.urandom(16).hex()}", # 隨機生成唯一 ID
+        "version": 1,
+        "metadata": {
+            "timestamp": datetime.datetime.now().isoformat(),
+            "component": {
+                "name": os.path.basename(os.path.abspath(project_path)),
+                "type": "application",
+                "location": os.path.abspath(project_path)
+            },
+            "tools": [
+                {
+                    "vendor": "CustomPQC",
+                    "name": "PQC-AST-Scanner",
+                    "version": "1.0.0"
+                }
+            ]
+        },
+        "components": [],  # 這裡可以放依賴套件 (本次 demo 略過)
+        "dependencies": [],
+        # 這是 CBOM 最重要的部分：加密資產清單
+        "crypto-assets": [] 
+    }
+
+    # 2. 將 findings 轉換為 crypto-assets
+    for finding in findings:
+        asset = {
+            "type": "cryptographic-asset",
+            "name": finding['CodeSnippet'],      # 例如 "AES.new", "MD5"
+            "algorithm": finding.get('Type', 'UNKNOWN'), # 例如 WEAK_HASH_MD5
+            "oid": finding['RuleID'],            # 使用我們的 RuleID 作為識別
+            "pqc_status": _determine_pqc_status(finding['RuleID']), # 判斷是否量子安全
+            "occurrences": [
+                {
+                    "location": finding['Location'],
+                    "line": int(finding['Location'].split(':')[-1]) if ':' in finding['Location'] else 0
+                }
+            ],
+            "risk": {
+                "message": finding['Message'],
+                "suggestion": finding['FixSuggestion']
+            }
+        }
+        cbom_data["crypto-assets"].append(asset)
+
+    # 3. 寫入檔案
+    try:
+        with open(output_file, 'w', encoding='utf-8') as f:
+            json.dump(cbom_data, f, indent=4, ensure_ascii=False)
+        print(f"\n[CBOM] 成功生成加密物料清單: {os.path.abspath(output_file)}")
+    except Exception as e:
+        print(f"\n[CBOM] 生成失敗: {e}")
+
+def _determine_pqc_status(rule_id):
+    """根據 RuleID 簡單判斷 PQC 狀態"""
+    if "SHA1" in rule_id or "MD5" in rule_id or "DES" in rule_id:
+        return "VULNERABLE (CLASSIC)" # 傳統漏洞
+    if "RSA" in rule_id or "ECC" in rule_id:
+        return "VULNERABLE (QUANTUM)" # 量子脆弱
+    if "AES" in rule_id:
+        if "WEAK" in rule_id:
+            return "VULNERABLE (CONFIGURATION)" # 配置錯誤 (如 ECB)
+        return "SAFE (QUANTUM-RESISTANT)" # AES-256 通常被視為抗量子
+    return "UNKNOWN"
 
 def scan_file(filepath):
     if filepath.endswith(".py"):
@@ -296,3 +372,18 @@ if __name__ == "__main__":
         print(f"代碼: {f['CodeSnippet']}")
         print(f"問題: {f['Message']}")
         print(f"🟢 修補建議: {f['FixSuggestion']}")
+
+    # 生成 CBOM 檔案
+    for i, f in enumerate(findings):
+        print(f"----- FINDING #{i+1} -----")
+        print(f"類型: {f['Type']} ({f['RuleID']})")
+        print(f"位置: {f['Location']}")
+        print(f"代碼: {f['CodeSnippet']}")
+        print(f"問題: {f['Message']}")
+        print(f"🟢 修補建議: {f['FixSuggestion']}")
+    
+    # --- 新增：呼叫 CBOM 生成函數 ---
+    if len(findings) > 0:
+        generate_cbom(findings, path_to_scan)
+    else:
+        print("\n未發現相關加密資產，跳過 CBOM 生成。")
