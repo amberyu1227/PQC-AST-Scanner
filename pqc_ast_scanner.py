@@ -43,6 +43,22 @@ PQC_KNOWLEDGE_BASE = {
     "message": "發現硬編碼密鑰，可能導致密鑰洩露，影響 PQC 遷移後的安全性。",
     "fix": "將密鑰儲存於環境變數或專門的密鑰管理器中。"
 	},
+    # --- PQC 正面識別 (PQC Ready) ---
+    "B501_KYBER": {"type": "PQC_KEM_ML_KEM", "message": "發現 NIST 標準 PQC 算法：ML-KEM (Kyber)。", "fix": "PQC READY。請確保實作符合 FIPS 203 標準。"},
+    "B502_DILITHIUM": {"type": "PQC_SIGN_ML_DSA", "message": "發現 NIST 標準 PQC 算法：ML-DSA (Dilithium)。", "fix": "PQC READY。請確保實作符合 FIPS 204 標準。"},
+    # --- [HARDCORE] 硬編碼與機密管理 ---
+    "B702_HARDCODED_KEY": {"type": "HARDCODED_SECRET_KEY", "message": "偵測到疑似硬編碼的加密金鑰。", "fix": "絕對禁止在程式碼中寫死金鑰。請改用環境變數或 KMS。"},
+    "B706_HARDCODED_PASSWORD": {"type": "HARDCODED_PASSWORD", "message": "偵測到疑似硬編碼的密碼。", "fix": "請勿將密碼儲存在原始碼中。"},
+    "B707_HARDCODED_AWS": {"type": "HARDCODED_CLOUD_CREDENTIAL", "message": "偵測到硬編碼 AWS Key (AKIA...)。", "fix": "使用 IAM Role。"},
+    "B708_HARDCODED_TOKEN": {"type": "HARDCODED_API_TOKEN", "message": "偵測到疑似硬編碼 API Token。", "fix": "動態生成 Token。"},
+    "B709_HARDCODED_PQC_SK": {"type": "HARDCODED_PQC_PRIVATE_KEY", "message": "偵測到疑似 PQC 私鑰硬編碼。", "fix": "PQC 私鑰極為敏感。"},
+    "B701_WEAK_RNG": {"type": "WEAK_RANDOM_SOURCE", "message": "使用弱亂數 (random)。", "fix": "改用 os.urandom。"},
+
+    # --- [ADVANCE] 進階參數檢查 ---
+    "B415_ECC_WEAK_CURVE": {"type": "WEAK_ECC_CURVE", "message": "弱橢圓曲線 (如 P-192)。", "fix": "使用 NIST P-256 以上。"},
+    "B703_WEAK_KDF_ITERATIONS": {"type": "WEAK_KDF_ITERATION_COUNT", "message": "PBKDF2 迭代次數過低。", "fix": "建議 > 600,000 次。"},
+    "B710_SHORT_SALT": {"type": "INSUFFICIENT_SALT_LENGTH", "message": "Salt 長度不足。", "fix": "Salt 應 > 16 bytes。"},
+    "B416_GCM_NONCE_LENGTH": {"type": "RISKY_GCM_NONCE_LENGTH", "message": "GCM Nonce 非 12 bytes。", "fix": "固定為 12 bytes。"},
 }
 # ----------------------------------------
 
@@ -72,11 +88,65 @@ def report_finding(node, filename, line, rule_id, custom_message=None):
         "FixSuggestion": info.get('fix', 'N/A')
     }
 
+def _determine_pqc_status(rule_id):
+    """決定資產的 PQC 狀態 (用於 CBOM)"""
+    if "HARDCODED" in rule_id: return "CRITICAL_SECRET_LEAK"
+    if any(k in rule_id for k in ["SHA1", "MD5", "DES"]): return "VULNERABLE (CLASSIC)"
+    if any(k in rule_id for k in ["RSA", "ECC", "WEAK"]): return "VULNERABLE (QUANTUM)"
+    if any(k in rule_id for k in ["KYBER", "DILITHIUM"]): return "PQC_READY"
+    if "AES" in rule_id and "SAFE" in rule_id: return "SAFE (QUANTUM-RESISTANT)"
+    return "UNKNOWN"
+
 # --- Python 掃描核心 ---
 class PQC_AST_Visitor(ast.NodeVisitor):
     def __init__(self, filename, findings_list):
         self.filename = filename
         self.findings_list = findings_list 
+
+    def _get_literal_value(self, node):
+        if isinstance(node, ast.Constant): return node.value
+        return None
+
+    def _get_call_arg_value(self, node, arg_index, kw_name):
+        val = None
+        for k in node.keywords:
+            if k.arg == kw_name and isinstance(k.value, ast.Constant): val = k.value.value
+        if val is None and len(node.args) > arg_index:
+            if isinstance(node.args[arg_index], ast.Constant): val = node.args[arg_index].value
+        return val
+
+    def visit_Assign(self, node):
+        target_name = ""
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                target_name = target.id.lower()
+                break
+        if not target_name:
+            self.generic_visit(node)
+            return
+
+        # 獲取字面量值 (修正 UnboundLocalError)
+        raw_value = self._get_literal_value(node.value)
+        assigned_value = None 
+        if isinstance(raw_value, str): assigned_value = raw_value
+        elif isinstance(raw_value, bytes):
+            try: assigned_value = raw_value.decode('utf-8')
+            except: assigned_value = str(raw_value)
+
+        # 檢查邏輯
+        if assigned_value and len(assigned_value) > 8: 
+            if assigned_value.startswith(("AKIA", "ASIA")):
+                self.findings_list.append(report_finding(node, self.filename, node.lineno, "B707_HARDCODED_AWS"))
+            elif any(s in target_name for s in ['password', 'passwd', 'pwd']) and "hash" not in target_name:
+                self.findings_list.append(report_finding(node, self.filename, node.lineno, "B706_HARDCODED_PASSWORD"))
+            elif ("token" in target_name or "api_key" in target_name) and "csrf" not in target_name and len(assigned_value) > 10:
+                self.findings_list.append(report_finding(node, self.filename, node.lineno, "B708_HARDCODED_TOKEN"))
+            elif ("sk" in target_name or "secret_key" in target_name) and ("pqc" in target_name or "kyber" in target_name):
+                 self.findings_list.append(report_finding(node, self.filename, node.lineno, "B709_HARDCODED_PQC_SK"))
+            elif any(s in target_name for s in ['key', 'secret', 'private']):
+                if "public" not in target_name and "pub" not in target_name:
+                    self.findings_list.append(report_finding(node, self.filename, node.lineno, "B702_HARDCODED_KEY"))
+        self.generic_visit(node)# 確保繼續遍歷子節點
 
     def visit_Call(self, node):
         full_name = self._get_full_name(node.func)
@@ -86,9 +156,11 @@ class PQC_AST_Visitor(ast.NodeVisitor):
             self.findings_list.append(report_finding(node, self.filename, node.lineno, "B303"))
         elif "hashlib.md5" in full_name: 
             self.findings_list.append(report_finding(node, self.filename, node.lineno, "B324"))
-            
+        elif "random.random" in full_name or "random.randint" in full_name:
+            self.findings_list.append(report_finding(node, self.filename, node.lineno, "B701_WEAK_RNG"))   
+
         # 2. 量子脆弱/弱加密 (DES, RSA)
-        elif "Crypto.Cipher.DES" in full_name:
+        elif any(x in full_name for x in ["DES.new", "DES3.new", "Crypto.Cipher.DES"]):
             self.findings_list.append(report_finding(node, self.filename, node.lineno, "B304"))
             
         elif "RSA.generate" in full_name:
@@ -114,32 +186,78 @@ class PQC_AST_Visitor(ast.NodeVisitor):
             else:
                  finding = report_finding(node, self.filename, node.lineno, "B413_AES_SAFE") 
             
-            self.findings_list.append(finding) 
+            self.findings_list.append(finding)
+
+        if node.args or node.keywords:
+            args_str = ""
+            try:
+                # 將所有參數轉為字串以進行關鍵字搜索
+                args_str = ", ".join([ast.unparse(a) for a in node.args])
+                args_str += ", ".join([ast.unparse(k.value) for k in node.keywords])
+            except: pass
+            
+            args_str = args_str.upper()
+            if "KYBER" in args_str or "ML-KEM" in args_str:
+                self.findings_list.append(report_finding(node, self.filename, node.lineno, "B501_KYBER"))
+            elif "DILITHIUM" in args_str or "ML-DSA" in args_str:
+                self.findings_list.append(report_finding(node, self.filename, node.lineno, "B502_DILITHIUM")) 
+
+        if "PBKDF2" in full_name:
+            iters = self._get_call_arg_value(node, 3, 'iterations')
+            if iters is not None and isinstance(iters, int) and iters < 600000:
+                self.findings_list.append(report_finding(node, self.filename, node.lineno, "B703_WEAK_KDF_ITERATIONS"))
         
+        if "generate_private_key" in full_name and "ec" in full_name:
+            for k in node.keywords:
+                if k.arg == 'curve':
+                    val = ast.unparse(k.value).upper() if hasattr(ast, 'unparse') else ""
+                    if any(w in val for w in ['SECP192', 'SECT163', 'BRAINPOOLP160']):
+                        self.findings_list.append(report_finding(node, self.filename, node.lineno, "B415_ECC_WEAK_CURVE"))
+
+        elif "ECC.generate" in full_name:
+            is_weak_curve = False
+            for k in node.keywords:
+                # 檢查 curve='P-192' 等弱曲線
+                if k.arg == 'curve':
+                    val = ast.unparse(k.value).upper() if hasattr(ast, 'unparse') else ""
+                    if any(w in val for w in ['P-192', 'SECP192', 'BRAINPOOLP160']):
+                        self.findings_list.append(report_finding(node, self.filename, node.lineno, "B415_ECC_WEAK_CURVE"))
+                        is_weak_curve = True
+            
+            # 如果不是弱曲線，它仍然是 PQC 遷移目標 (ECC 本身對量子脆弱)
+            if not is_weak_curve:
+                self.findings_list.append(report_finding(node, self.filename, node.lineno, "B413_ECC"))
+
+        # --- [B710] Salt 長度檢查 (針對 os.urandom) ---
+        # 檢查: os.urandom(N) 其中 N < 16
+        if "os.urandom" in full_name:
+            size = self._get_int_arg(node.args, 0)
+            # 排除 12 (GCM Nonce 標準長度)，只針對過短的 Salt/IV
+            if size is not None and size < 16 and size != 12:
+                self.findings_list.append(report_finding(node, self.filename, node.lineno, "B710_SHORT_SALT"))
+
+        # --- [B416] AES-GCM Nonce 長度檢查 ---
+        # 檢查: AES.new(..., nonce=os.urandom(N)) 其中 N != 12
+        if "AES.new" in full_name:
+            # 檢查是否使用了 GCM 模式
+            is_gcm = False
+            for k in node.keywords:
+                if k.arg == 'mode' and 'GCM' in ast.unparse(k.value).upper():
+                    is_gcm = True
+                    break
+            
+            # 如果是 GCM，檢查 nonce 參數
+            if is_gcm:
+                for k in node.keywords:
+                    if k.arg == 'nonce':
+                        # 檢查 nonce 是否來自 os.urandom
+                        if isinstance(k.value, ast.Call) and "urandom" in ast.unparse(k.value.func):
+                             nonce_size = self._get_int_arg(k.value.args, 0)
+                             if nonce_size is not None and nonce_size != 12:
+                                  self.findings_list.append(report_finding(node, self.filename, node.lineno, "B416_GCM_NONCE_LENGTH"))
+
         # 確保繼續遍歷子節點
         self.generic_visit(node)
-	
-    def visit_Assign(self, node):
-        """偵測硬編碼密鑰 (借鑒 Bandit B105)"""
-        
-        # 僅檢查單目標賦值 (例如 WEAK_KEY = "...")
-        if len(node.targets) == 1:
-            target = ast.unparse(node.targets[0]).upper()
-            line_num = node.lineno
-            
-            # 檢查變數名是否包含 'KEY', 'PASS', 'SECRET'
-            if ("KEY" in target or "PASS" in target or "SECRET" in target):
-                
-                # 檢查右側賦值是否為字符串常量
-                if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
-                    value = node.value.value
-                    
-                    # 檢查字符串長度 (避免誤判單個字母)
-                    if len(value) > 10 and not value.isnumeric(): 
-                        finding = report_finding(node, self.filename, line_num, "B105_HARDCODED_SECRET")
-                        self.findings_list.append(finding)
-                            
-        self.generic_visit(node) # 確保繼續遍歷子節點
 
     # 辅助函数: 获取完整函数名
     def _get_full_name(self, node):
@@ -183,6 +301,22 @@ class PQC_AST_Visitor(ast.NodeVisitor):
                 return arg.value
         return None
 
+    def visit_Constant(self, node):
+        """
+        捕捉所有字串常數，用於識別 PQC 關鍵字 (Kyber, Dilithium)
+        適用於 Python 3.8+ (舊版 Python 使用 visit_Str)
+        """
+        if isinstance(node.value, str):
+            val = node.value.upper()
+            # 檢查 PQC 關鍵字
+            if "KYBER" in val or "ML-KEM" in val:
+                self.findings_list.append(report_finding(node, self.filename, node.lineno, "B501_KYBER"))
+            elif "DILITHIUM" in val or "ML-DSA" in val:
+                self.findings_list.append(report_finding(node, self.filename, node.lineno, "B502_DILITHIUM"))
+        
+        # 繼續遍歷 (雖然 Constant 通常是葉節點)
+        self.generic_visit(node)
+        
 def scan_python(filepath):
     findings_list = []
     with open(filepath, 'r', encoding='utf-8') as f:
@@ -194,6 +328,13 @@ def scan_python(filepath):
 
 
 # --- Java 掃描核心 ---
+
+def is_secret_var(name):
+    """ 判斷變數名稱是否敏感 """
+    sensitive = ['key', 'secret', 'password', 'passwd', 'pwd', 'token', 'private', 'credential']
+    name = name.lower()
+    return any(k in name for k in sensitive) and "public" not in name and "hash" not in name
+
 def scan_java(filepath):
     findings_list = []
     with open(filepath, 'r', encoding='utf-8') as f:
@@ -219,41 +360,160 @@ def scan_java(filepath):
     # --- 成功解析後，開始遍歷 AST ---
     for path, node in tree:
         # 只尋找方法呼叫 (MethodInvocation)
-        if isinstance(node, javalang.tree.MethodInvocation) and node.member == 'getInstance':
+        if isinstance(node, javalang.tree.MethodInvocation):
             
-            # 檢查參數是否為字符串字面量
-            if node.arguments and isinstance(node.arguments[0], javalang.tree.Literal):
-                arg_value = node.arguments[0].value.strip('"').upper()
-                line_num = node.position.line
+            if node.member == 'getInstance':
+                # 檢查參數是否為字符串字面量
+                if node.arguments and isinstance(node.arguments[0], javalang.tree.Literal):
+                    arg_value = node.arguments[0].value.strip('"').upper()
+                    line_num = node.position.line
 
-                # 1. 弱雜湊 (優先級最高)
-                if "SHA1" in arg_value:
-                    findings_list.append(report_finding(node, filepath, line_num, "B303"))
-                elif "MD5" in arg_value:
-                    findings_list.append(report_finding(node, filepath, line_num, "B324"))
+                    # 1. 弱雜湊 (優先級最高)
+                    if "SHA1" in arg_value:
+                        findings_list.append(report_finding(node, filepath, line_num, "B303"))
+                    elif "MD5" in arg_value:
+                        findings_list.append(report_finding(node, filepath, line_num, "B324"))
 
-                # 2. 弱加密 (DES)
-                elif "DES" in arg_value:
-                    findings_list.append(report_finding(node, filepath, line_num, "B304")) 
-                
-                # 3. AES 模式檢查 (必須在 DES 之後，避免與 ECB/GCM 衝突)
-                elif "AES" in arg_value:
-                    if "ECB" in arg_value:
-                        # 3.1 偵測 AES/ECB 模式 (不安全)
-                        findings_list.append(report_finding(node, filepath, line_num, "B413_AES_WEAK")) 
-                    else:
-                        # 3.2 偵測其他 AES 模式 (資產盤點)
-                        # 將所有非 ECB 的 AES 視為安全資產盤點
-                        findings_list.append(report_finding(node, filepath, line_num, "B413_AES_SAFE"))
+                    # 2. 弱加密 (DES)
+                    elif "DES" in arg_value:
+                        findings_list.append(report_finding(node, filepath, line_num, "B304")) 
+                    elif "DESEDE" in arg_value:
+                        findings_list.append(report_finding(node, filepath, line_num, "B304"))
 
-                # 4. PQC 遷移目標 (RSA & ECC - 放到最後檢查，避免與 AES/DES 衝突)
-                elif "RSA" in arg_value:
-                    # 這裡沒有實現 Java 的 Key Size 檢查，只標記為 PQC 目標
-                    findings_list.append(report_finding(node, filepath, line_num, "B413_RSA"))
-                elif "EC" in arg_value or "ECDSA" in arg_value or "ECDH" in arg_value:
-                    # 標記 ECC 
-                    findings_list.append(report_finding(node, filepath, line_num, "B413_ECC"))
+                    # 3. AES 模式檢查 (必須在 DES 之後，避免與 ECB/GCM 衝突)
+                    elif "AES" in arg_value:
+                        if "ECB" in arg_value:
+                            # 3.1 偵測 AES/ECB 模式 (不安全)
+                            findings_list.append(report_finding(node, filepath, line_num, "B413_AES_WEAK")) 
+                        else:
+                            # 3.2 偵測其他 AES 模式 (資產盤點)
+                            # 將所有非 ECB 的 AES 視為安全資產盤點
+                            findings_list.append(report_finding(node, filepath, line_num, "B413_AES_SAFE"))
+
+                    # 4. PQC 遷移目標 (RSA & ECC - 放到最後檢查，避免與 AES/DES 衝突)
+                    elif "RSA" in arg_value:
+                        # 這裡沒有實現 Java 的 Key Size 檢查，只標記為 PQC 目標
+                        findings_list.append(report_finding(node, filepath, line_num, "B413_RSA"))
+                    elif "EC" in arg_value or "ECDSA" in arg_value or "ECDH" in arg_value:
+                        # 標記 ECC 
+                        findings_list.append(report_finding(node, filepath, line_num, "B413_ECC"))
+
+            elif node.member == 'initialize':
+                if len(node.arguments) == 1 and isinstance(node.arguments[0], javalang.tree.Literal):
+                    try:
+                        key_size = int(node.arguments[0].value)
+                        if key_size < 2048:
+                            findings_list.append(report_finding(node, filepath, node.position.line, "B413_RSA_WEAK_SIZE", f"RSA 金鑰過短 ({key_size})"))
+                        else:
+                            findings_list.append(report_finding(node, filepath, node.position.line, "B413_RSA", "RSA 金鑰生成 (PQC 目標)"))
+                    except ValueError:
+                        pass
+
+            # [B701] 弱亂數 (java.util.Random)
+            elif node.member == 'nextInt' or node.member == 'nextBytes':
+                # 簡單啟發式：如果是在 Random 物件上調用
+                # javalang 很難追蹤變數類型，這裡假設變數名包含 'rand' 且不是 SecureRandom
+                if hasattr(node, 'qualifier') and node.qualifier and 'rand' in node.qualifier.lower() and 'secure' not in node.qualifier.lower():
+                    findings_list.append(report_finding(node, filepath, node.position.line, "B701_WEAK_RNG"))
+
+        # 2. 變數宣告檢查 (LocalVariableDeclaration) - 硬編碼機密
+        elif isinstance(node, javalang.tree.LocalVariableDeclaration):
+            for declarator in node.declarators:
+                # 檢查是否有初始化值，且值為字串字面量
+                var_name = declarator.name.lower()
+                line_num = node.position.line if node.position else 0
+
+                if declarator.initializer and isinstance(declarator.initializer, javalang.tree.Literal):
+                    # 獲取變數名和值
+                    raw_value = str(declarator.initializer.value)
+                    if raw_value.startswith('"'):
+                        value = raw_value.strip('"')
+
+                        # [B707] AWS 憑證
+                        if value.startswith("AKIA") or value.startswith("ASIA"):
+                            findings_list.append(report_finding(node, filepath, line_num, "B707_HARDCODED_AWS"))
+
+                        elif is_secret_var(var_name):
+                            if "password" in var_name:
+                                findings_list.append(report_finding(node, filepath, line_num, "B706_HARDCODED_PASSWORD"))
+                            elif "token" in var_name:
+                                findings_list.append(report_finding(node, filepath, line_num, "B708_HARDCODED_TOKEN"))
+                            elif "pqc" in var_name or "kyber" in var_name:
+                                findings_list.append(report_finding(node, filepath, line_num, "B709_HARDCODED_PQC_SK"))
+                            else:
+                                findings_list.append(report_finding(node, filepath, line_num, "B702_HARDCODED_KEY"))
+                        # === [B710] Salt 長度檢查 (重點整合) ===
+                        # 偵測模式: byte[] salt = new byte[8]; 或 byte[] salt = {1,2,...};
+                if 'salt' in var_name and declarator.initializer:
+                    init = declarator.initializer
+                    salt_size = None
                     
+                    # 情況 A: new byte[N] (ArrayCreator)
+                    if isinstance(init, javalang.tree.ArrayCreator):
+                        # 檢查維度定義 (例如 [8])
+                        if init.dimensions and isinstance(init.dimensions[0], javalang.tree.Literal):
+                            if init.dimensions[0].value.isdigit():
+                                salt_size = int(init.dimensions[0].value)
+                    
+                    # 情況 B: { 0x01, 0x02, ... } (ArrayInitializer)
+                    elif isinstance(init, javalang.tree.ArrayInitializer):
+                        if init.initializers:
+                            salt_size = len(init.initializers)
+
+                    # 判斷是否過短 (< 16 bytes)
+                    if salt_size is not None and salt_size < 16:
+                        findings_list.append(report_finding(node, filepath, line_num, "B710_SHORT_SALT"))
+
+        elif isinstance(node, javalang.tree.ClassCreator):
+            type_name = node.type.name
+            line_num = node.position.line if node.position else 0
+            
+            # [B701] 弱亂數
+            if type_name == 'Random':
+                 findings_list.append(report_finding(node, filepath, line_num, "B701_WEAK_RNG"))
+
+            # [B703] PBKDF2 迭代次數檢查
+            # Java: new PBEKeySpec(chars, salt, iterations, keyLength)
+            elif "PBEKeySpec" in type_name and len(node.arguments) >= 3:
+                # 假設第三個參數 (index 2) 是迭代次數
+                iter_arg = node.arguments[2]
+                if isinstance(iter_arg, javalang.tree.Literal) and iter_arg.value.isdigit():
+                    iterations = int(iter_arg.value)
+                    if iterations < 600000:
+                        findings_list.append(report_finding(node, filepath, line_num, "B703_WEAK_KDF_ITERATIONS"))
+
+            # [B415] ECC 曲線檢查
+            # Java: new ECGenParameterSpec("secp192r1")
+            elif "ECGenParameterSpec" in type_name and len(node.arguments) > 0:
+                curve_arg = node.arguments[0]
+                if isinstance(curve_arg, javalang.tree.Literal):
+                    curve_name = curve_arg.value.strip('"').upper()
+                    if any(w in curve_name for w in ['SECP192', 'SECT163', 'BRAINPOOLP160']):
+                        findings_list.append(report_finding(node, filepath, line_num, "B415_ECC_WEAK_CURVE"))
+
+            # [B416] GCM Nonce 長度檢查
+            # Java: new GCMParameterSpec(tLen, iv)
+            # 這裡比較難直接檢查 IV 長度，除非 IV 是直接 new byte[16]
+            # 我們檢查第二個參數是否為 new byte[16] (ArrayCreator)
+            elif "GCMParameterSpec" in type_name and len(node.arguments) >= 2:
+                iv_arg = node.arguments[1]
+                if isinstance(iv_arg, javalang.tree.ArrayCreator):
+                    # 檢查 new byte[16]
+                    for dim in iv_arg.dimensions:
+                        if isinstance(dim, javalang.tree.Literal) and dim.value.isdigit():
+                            size = int(dim.value)
+                            if size != 12:
+                                findings_list.append(report_finding(node, filepath, line_num, "B416_GCM_NONCE_LENGTH"))
+        # 4. 字串常數檢查 (全域 PQC 識別)
+        if isinstance(node, javalang.tree.Literal):
+            val = str(node.value)
+            if val.startswith('"'):
+                val_clean = val.strip('"').upper()
+                if "KYBER" in val_clean or "ML-KEM" in val_clean:
+                    findings_list.append(report_finding(node, filepath, node.position.line, "B501_KYBER"))
+                elif "DILITHIUM" in val_clean or "ML-DSA" in val_clean:
+                    findings_list.append(report_finding(node, filepath, node.position.line, "B502_DILITHIUM"))
+
     return findings_list
 
 # --- C/C++ 掃描核心 ---
@@ -347,9 +607,21 @@ def generate_risk_pie_chart(findings):
         'WEAK_CIPHER_MODE': '#C0392B',     # 🔴 深磚紅 (Critical)
         'WEAK_IV_NONCE': '#D35400',        # 🟠 深焦橙 (高風險)
         'PQC_TARGET_RSA': '#2980B9',       # 🔵 深海藍 (PQC 核心目標)
-        'PQC_TARGET_ECC': '#2980B9',       # 🔵 深海藍
+        'PQC_TARGET_ECC': '#2980B9',       # 🔵 深海藍 (PQC 核心目標)
         'TRADITIONAL_AES_ASSET': '#27AE60', # 🟢 翡翠綠 (安全資產)
-        'SECRET_LEAKAGE': '#C0392B'        # 🔴 深磚紅 (Critical)    
+        'SECRET_LEAKAGE': '#C0392B',        # 🔴 深磚紅 (Critical)    
+        'PQC_KEM_ML_KEM': '#2980B9',       # 🔵 深海藍 (PQC 核心目標)
+        'PQC_SIGN_ML_DSA': '#2980B9',       # 🔵 深海藍 (PQC 核心目標)
+        'HARDCODED_SECRET_KEY': '#C0392B',      # 🔴 深磚紅 (Critical)
+        'HARDCODED_PASSWORD': '#C0392B',      # 🔴 深磚紅 (Critical)
+        'HARDCODED_CLOUD_CREDENTIAL': '#C0392B',# 🔴 深磚紅 (Critical)
+        'HARDCODED_API_TOKEN': '#C0392B',      # 🔴 深磚紅 (Critical)
+        'HARDCODED_PQC_PRIVATE_KEY': '#C0392B',# 🔴 深磚紅 (Critical)
+        'WEAK_RANDOM_SOURCE': '#C0392B',      # 🔴 深磚紅 (Critical)
+        'WEAK_ECC_CURVE': '#D35400',       # 🟠 深焦橙 (高風險)
+        'WEAK_KDF_ITERATION_COUNT': '#D35400',       # 🟠 深焦橙 (高風險)
+        'INSUFFICIENT_SALT_LENGTH': '#D35400',       # 🟠 深焦橙 (高風險)
+        'RISKY_GCM_NONCE_LENGTH': '#D35400',       # 🟠 深焦橙 (高風險)
 	}
     
     colors = [color_map.get(label, '#95A5A6') for label in risk_counts.index]
@@ -507,5 +779,3 @@ if __name__ == "__main__":
         
     except Exception as e:
         print(f"❌ 寫入報告失敗: {e}")
-
-
