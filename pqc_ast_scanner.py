@@ -8,6 +8,7 @@ import pandas as pd             # 數據處理
 import plotly.graph_objects as go # 視覺化圖表
 import json                     # JSON 輸出
 from datetime import datetime # 獲取時間戳
+import webbrowser
 
 # --- PQC 知識庫與修復建議 (PQC_KNOWLEDGE_BASE) ---
 PQC_KNOWLEDGE_BASE = {
@@ -369,7 +370,7 @@ def scan_java(filepath):
                     line_num = node.position.line
 
                     # 1. 弱雜湊 (優先級最高)
-                    if "SHA1" in arg_value:
+                    if "SHA1" in arg_value or "SHA-1" in arg_value:
                         findings_list.append(report_finding(node, filepath, line_num, "B303"))
                     elif "MD5" in arg_value:
                         findings_list.append(report_finding(node, filepath, line_num, "B324"))
@@ -596,7 +597,7 @@ def generate_risk_pie_chart(findings):
         return "<h3>未發現加密資產或弱點。</h3>"
         
     df = pd.DataFrame(findings)
-    risk_counts = df['Type'].value_counts()
+    #risk_counts = df['Type'].value_counts()
     
     # 定義顏色：確保高風險 (WEAK, SECRET) 使用紅色/橙色
     color_map = {
@@ -624,14 +625,28 @@ def generate_risk_pie_chart(findings):
         'RISKY_GCM_NONCE_LENGTH': '#D35400',       # 🟠 深焦橙 (高風險)
 	}
     
-    colors = [color_map.get(label, '#95A5A6') for label in risk_counts.index]
+    #colors = [color_map.get(label, '#95A5A6') for label in risk_counts.index]
     
+    # 2. 統計數量並轉換為 DataFrame
+    stats = df['Type'].value_counts().reset_index()
+    stats.columns = ['Type', 'Count']
+
+    # 3. 對應顏色
+    # map 函式會根據 Type 填入對應的 Hex 色碼
+    stats['Color'] = stats['Type'].map(color_map).fillna('#95A5A6') # 預設灰色
+
+    # 4. [關鍵步驟] 依照「顏色」進行排序
+    # 這樣相同的顏色 (Hex Code) 就會排在一起
+    # 第二排序鍵是 Count (降序)，讓同顏色的區塊中，數量多的排前面
+    stats = stats.sort_values(by=['Color', 'Count'], ascending=[True, False])
+
     fig = go.Figure(data=[go.Pie(
-        labels=risk_counts.index, 
-        values=risk_counts.values,
+        labels=stats['Type'],
+        values=stats['Count'],
         hole=.4, # 甜甜圈图
-        marker=dict(colors=colors),
-        hovertemplate='%{label}<br>數量: %{value}<extra></extra>' 
+        marker=dict(colors=stats['Color']),
+        hovertemplate='%{label}<br>數量: %{value}<extra></extra>' ,
+        sort=False # [關鍵] 禁用 Plotly 的自動排序，強制使用我們上面排好的順序
     )])
     
     fig.update_layout(
@@ -769,6 +784,9 @@ if __name__ == "__main__":
         with open(HTML_FILENAME, 'w', encoding='utf-8') as f:
             f.write(full_html_content)
         
+        # 取得 HTML 檔案的絕對路徑 (確保瀏覽器能正確找到檔案)
+        file_path = os.path.abspath(HTML_FILENAME)
+
         # 3. 輸出到終端機 (簡化輸出)
         print("\n" + "=" * 60)
         print("✅ 掃描完成！")
@@ -777,5 +795,9 @@ if __name__ == "__main__":
         print(f"   -> 視覺化報告: {HTML_FILENAME} (請在瀏覽器中打開此文件查看儀表板)")
         print("=" * 60)
         
+        # 3. [新增] 自動開啟瀏覽器
+        print(f"🚀 正在開啟瀏覽器檢視報告...")
+        webbrowser.open(f"file://{file_path}")
+
     except Exception as e:
         print(f"❌ 寫入報告失敗: {e}")
