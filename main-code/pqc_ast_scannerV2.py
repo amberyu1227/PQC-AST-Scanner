@@ -40,14 +40,22 @@ PQC_KNOWLEDGE_BASE = {
     },
 	# 硬編碼偵測
 	"B105_HARDCODED_SECRET": {
-    "type": "SECRET_LEAKAGE",
-    "message": "發現硬編碼密鑰，可能導致密鑰洩露，影響 PQC 遷移後的安全性。",
-    "fix": "將密鑰儲存於環境變數或專門的密鑰管理器中。"
+        "type": "SECRET_LEAKAGE",
+        "message": "發現硬編碼密鑰，可能導致密鑰洩露，影響 PQC 遷移後的安全性。",
+        "fix": "將密鑰儲存於環境變數或專門的密鑰管理器中。"
 	},
-    # --- PQC 正面識別 (PQC Ready) ---
-    "B501_KYBER": {"type": "PQC_KEM_ML_KEM", "message": "發現 NIST 標準 PQC 算法：ML-KEM (Kyber)。", "fix": "PQC READY。請確保實作符合 FIPS 203 標準。"},
-    "B502_DILITHIUM": {"type": "PQC_SIGN_ML_DSA", "message": "發現 NIST 標準 PQC 算法：ML-DSA (Dilithium)。", "fix": "PQC READY。請確保實作符合 FIPS 204 標準。"},
-    # --- [HARDCORE] 硬編碼與機密管理 ---
+    # PQC 正面識別 (PQC Ready)
+    "B501_KYBER": {
+        "type": "PQC_KEM_ML_KEM",
+        "message": "發現 NIST 標準 PQC 算法：ML-KEM (Kyber)。",
+        "fix": "PQC READY。請確保實作符合 FIPS 203 標準。"
+    },
+    "B502_DILITHIUM": {
+        "type": "PQC_SIGN_ML_DSA",
+        "message": "發現 NIST 標準 PQC 算法：ML-DSA (Dilithium)。",
+        "fix": "PQC READY。請確保實作符合 FIPS 204 標準。"
+    },
+    # [HARDCORE] 硬編碼與機密管理
     "B702_HARDCODED_KEY": {"type": "HARDCODED_SECRET_KEY", "message": "偵測到疑似硬編碼的加密金鑰。", "fix": "絕對禁止在程式碼中寫死金鑰。請改用環境變數或 KMS。"},
     "B706_HARDCODED_PASSWORD": {"type": "HARDCODED_PASSWORD", "message": "偵測到疑似硬編碼的密碼。", "fix": "請勿將密碼儲存在原始碼中。"},
     "B707_HARDCODED_AWS": {"type": "HARDCODED_CLOUD_CREDENTIAL", "message": "偵測到硬編碼 AWS Key (AKIA...)。", "fix": "使用 IAM Role。"},
@@ -55,7 +63,7 @@ PQC_KNOWLEDGE_BASE = {
     "B709_HARDCODED_PQC_SK": {"type": "HARDCODED_PQC_PRIVATE_KEY", "message": "偵測到疑似 PQC 私鑰硬編碼。", "fix": "PQC 私鑰極為敏感。"},
     "B701_WEAK_RNG": {"type": "WEAK_RANDOM_SOURCE", "message": "使用弱亂數 (random)。", "fix": "改用 os.urandom。"},
 
-    # --- [ADVANCE] 進階參數檢查 ---
+    # [ADVANCE] 進階參數檢查
     "B415_ECC_WEAK_CURVE": {"type": "WEAK_ECC_CURVE", "message": "弱橢圓曲線 (如 P-192)。", "fix": "使用 NIST P-256 以上。"},
     "B703_WEAK_KDF_ITERATIONS": {"type": "WEAK_KDF_ITERATION_COUNT", "message": "PBKDF2 迭代次數過低。", "fix": "建議 > 600,000 次。"},
     "B710_SHORT_SALT": {"type": "INSUFFICIENT_SALT_LENGTH", "message": "Salt 長度不足。", "fix": "Salt 應 > 16 bytes。"},
@@ -264,7 +272,7 @@ class PQC_AST_Visitor(ast.NodeVisitor):
         # 確保繼續遍歷子節點
         self.generic_visit(node)
 
-    # 辅助函数: 获取完整函数名
+    # 輔助函數: 獲取完整函數名
     def _get_full_name(self, node):
         if isinstance(node, ast.Attribute):
             return self._get_full_name(node.value) + "." + node.attr
@@ -272,7 +280,7 @@ class PQC_AST_Visitor(ast.NodeVisitor):
             return node.id
         return ""
     
-    # 辅助函数: 检查 ECB 模式
+    # 輔助函數: 檢查 ECB 模式
     def _is_ecb_mode(self, call_node):
         for keyword in call_node.keywords:
             if keyword.arg == 'mode':
@@ -282,7 +290,7 @@ class PQC_AST_Visitor(ast.NodeVisitor):
             return 'ECB' in ast.unparse(call_node.args[1]).upper()
         return False
     
-    # 辅助函数: 检查 CBC/CFB 模式 (需要 IV)
+    # 輔助函數: 檢查 CBC/CFB 模式 (需要 IV)
     def _is_cbc_cfb_mode(self, call_node):
         for keyword in call_node.keywords:
             if keyword.arg == 'mode':
@@ -294,11 +302,11 @@ class PQC_AST_Visitor(ast.NodeVisitor):
             return 'CBC' in mode or 'CFB' in mode
         return False
     
-    # 辅助函数: 检查关键字参数是否存在
+    # 輔助函數: 檢查關鍵字參數是否存在
     def _has_keyword_arg(self, keywords, arg_name):
         return any(keyword.arg == arg_name for keyword in keywords)
         
-    # 辅助函数: 获取整数参数 (Key Size)
+    # 輔助函數: 獲取整數參數 (Key Size)
     def _get_int_arg(self, args, index):
         if len(args) > index:
             arg = args[index]

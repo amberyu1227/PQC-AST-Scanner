@@ -11,7 +11,7 @@ import tempfile
 from scanner import scan_file, _determine_pqc_status
 
 # 配置 Gemini
-genai.configure(api_key="Gemini key")
+genai.configure(api_key="AIzaSyBdZh0XJOaedVtIPMW9Q4vQ82DzTs53Uas")
 try:
     # 獲取所有支援生成內容的模型清單
     available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
