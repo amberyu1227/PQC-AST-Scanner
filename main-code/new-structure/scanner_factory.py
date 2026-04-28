@@ -1,12 +1,7 @@
 import os
 from scanner_py import PythonScanner
 from scanner_java import JavaScanner
-
-# 預留 C++ 接口，避免隊友尚未完成時報錯
-try:
-    from scanner_cpp import CppScanner
-except ImportError:
-    CppScanner = None
+from scanner_cpp import CppScanner
 
 def scan_file(filepath):
     """
@@ -18,20 +13,30 @@ def scan_file(filepath):
     scanners = {
         '.py': PythonScanner,
         '.java': JavaScanner,
+        '.cpp': CppScanner,
+        '.c': CppScanner,
+        '.h': CppScanner,
+        '.cc': CppScanner
     }
-    
-    # 增加 C/C++ 支援 (如果隊友檔案已存在)
-    if CppScanner:
-        scanners.update({'.c': CppScanner, '.cpp': CppScanner, '.h': CppScanner})
 
     scanner_class = scanners.get(ext)
     
+    # 1. 檢查是否支援該副檔名
     if not scanner_class:
+        print(f"⚠️ 不支援的檔案格式: {ext}")
         return []
-
-    # 實例化並執行掃描
-    engine = scanner_class(filepath)
-    return engine.scan(filepath)
+        
+    # 2. 統一實例化邏輯
+    try:
+        if scanner_class == CppScanner:
+            scanner = scanner_class()  # 朋友的版本：__init__(self)
+        else:
+            scanner = scanner_class(filepath) # 你的版本：__init__(self, filename)
+            
+        return scanner.scan(filepath)
+    except Exception as e:
+        print(f"❌ 掃描過程出錯 ({filepath}): {e}")
+        return []
 
 def scan_project_recursive(root_dir):
     """

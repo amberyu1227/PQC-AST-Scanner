@@ -16,9 +16,9 @@ class CppScanner(BaseScanner):
     """
     def __init__(self):
         # 初始化時先建立解析器，但不固定檔案路徑
+        self.parser, self.language = get_cpp_parser()
         self.findings = []
         self.alias_map = {}
-        self.parser, self.language = get_cpp_parser()
 
     def scan(self, filepath):
         """實作與 Python 版本對齊的 scan(filepath) 方法"""
@@ -175,11 +175,18 @@ class CppScanner(BaseScanner):
         return None
 
     def report_finding(self, snippet, line, rule_id):
-        """依據 BaseScanner 格式回報結果"""
+        from scanner_base import PQC_KNOWLEDGE_BASE
+    
+        # 取得基礎資訊
+        rule_info = PQC_KNOWLEDGE_BASE.get(rule_id, {})
+        
         self.findings.append({
             "RuleID": rule_id,
             "CodeSnippet": snippet,
-            "Location": f"{self.filename}:{line}"
+            "Location": f"{self.filename}:{line}",
+            "Type": rule_info.get("type", "Unknown"),
+            "Message": rule_info.get("message", "N/A"),
+            "FixSuggestion": rule_info.get("fix", "N/A")
         })
 
 # --- 測試整合後的效果 ---

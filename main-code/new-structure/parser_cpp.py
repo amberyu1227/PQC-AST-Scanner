@@ -1,11 +1,11 @@
-from tree_sitter import Parser
-from tree_sitter_languages import get_language
+# parser_cpp.py
+import tree_sitter_cpp as tscpp
+from tree_sitter import Language, Parser
 
 def get_cpp_parser():
-    parser = Parser()
-
-    cpp_language = get_language("cpp")  # ✅ 完全相容版本
-
-    parser.set_language(cpp_language)
-
+    # 使用官方推薦的 Language 物件建立方式
+    cpp_language = Language(tscpp.language())
+    
+    parser = Parser(cpp_language)
+    
     return parser, cpp_language
