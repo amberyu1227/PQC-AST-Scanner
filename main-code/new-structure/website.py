@@ -13,7 +13,7 @@ from scanner_factory import scan_file, scan_project_recursive
 from scanner_base import _determine_pqc_status, generate_cbom_json
 
 # 配置 Gemini (維持原樣)
-genai.configure(api_key="Gemini key")
+genai.configure(api_key="Gemini API Key")  # 請替換為你的 Gemini API Key
 try:
     available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
     target_model = next((m for m in available_models if "flash" in m), available_models[0])
@@ -24,12 +24,18 @@ except Exception as e:
     
 def get_pqc_context():
     if 'findings' in st.session_state and not st.session_state['findings'].empty:
-        df_mini = st.session_state['findings'].head(10)
-        context = "當前掃描到的前 10 項加密資產：\n"
-        for _, row in df_mini.iterrows():
-            context += f"- [{row['Type']}] 位於 {row['Location']}\n"
+        # 取得當前所有的掃描結果
+        current_findings = st.session_state['findings'].to_dict('records')
+        
+        # 呼叫標準化 CBOM 生成器
+        cbom_dict = generate_cbom_json(current_findings)
+        
+        # 將 JSON 轉為字串格式
+        cbom_json_str = json.dumps(cbom_dict, indent=2, ensure_ascii=False)
+        context = f"以下是根據最新掃描結果生成的 CBOM 風險數據：\n{cbom_json_str}"
+
         return context
-    return "尚無掃描結果。"
+    return "系統當前尚未進行任何原始碼掃描，尚無 CBOM 風險數據。"
 
 # 初始化對話紀錄 (維持原樣)
 if "messages" not in st.session_state:
