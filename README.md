@@ -127,5 +127,3 @@ streamlit run src/website.py
 * **弱加密演算法 (Weak Crypto)**：檢測明文使用的 DES, MD5, SHA1 等過時演算法
 * **PQC 遷移目標盤體 (PQC Transition)**：全面盤點傳統 RSA, ECC 等不具備抗量子能力的加密資產
 * **不良安全實作 (Insecure Implementation)**：弱隨機數生成源 (Weak Random)、不足的 Salt 長度、高風險 GCM Nonce 重複使用風險
-
----
