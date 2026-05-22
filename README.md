@@ -87,26 +87,26 @@ Plotly Visualization   AI Analysis
 * Git
 
 ### 1. 取得程式碼與安裝依賴包
-bash
-### 複製專案原始碼
+
+#### 複製專案原始碼
 
 ```
 git clone https://github.com/your-repo/PQC-AST-Scanner.git
 cd PQC-AST-Scanner
 ```
 
-### 建立虛擬環境 (以 Mac/Linux 為例)
+#### 建立虛擬環境 (以 Mac/Linux 為例)
 ```
 python3.11 -m venv venv
 source venv/bin/activate
 ```
 
-### 安裝依賴套件
+#### 安裝依賴套件
 ```
 pip install -r requirements.txt
 ```
 
-##### 2. 啟動開發伺服器
+### 2. 啟動開發伺服器
 ```
 streamlit run src/website.py
 ```
