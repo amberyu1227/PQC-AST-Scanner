@@ -1,19 +1,11 @@
 # ⚛️ PQC-AST-Scanner
 
-### Post-Quantum Cryptography Migration Scanner
+![Python Version](https://img.shields.io/badge/Python-3.11-blue.svg)
+![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B.svg)
+![Gemini AI](https://img.shields.io/badge/AI-Gemini_3.5_Flash-8E75B2.svg)
+![License](https://img.shields.io/badge/License-MIT-green.svg)
 
-PQC-AST-Scanner 是一個 **跨語言靜態分析工具**，用於自動盤點原始碼中的 **密碼學資產 (Cryptographic Assets)**，並識別：
-
-* 量子脆弱演算法 (Quantum-Vulnerable)
-* 傳統弱密碼學
-* 不安全加密模式
-* 硬編碼密鑰
-* 不安全亂數
-* 錯誤的密碼學參數
-
-工具使用 **AST (Abstract Syntax Tree) 語義分析**，能比單純字串搜尋更精確地分析程式碼中的密碼學使用方式。
-
-此外，本專案提供 **互動式 Web UI、AI 助手、以及風險視覺化分析**，協助企業進行 **Post-Quantum Cryptography (PQC) 遷移盤點**。
+**PQC-AST-Scanner** 是一款專為後量子密碼學（PQC）遷移與傳統密碼學漏洞檢測所設計的靜態掃描工具。本系統支援三種主流語言，並無縫整合 Google 最新 Gemini AI 模型，提供全自動化的漏洞分析、可視化報表與代碼修復建議。
 
 ---
 
@@ -51,284 +43,87 @@ Plotly Visualization   AI Analysis
 
 ---
 
-# 🚀 主要功能
+## ✨ 核心功能 (Key Features)
 
-## 1️⃣ AST 靜態分析 (核心)
-
-透過 **語法樹分析**精確偵測密碼學使用方式，例如：
-
-| 檢測項目               | 說明          |
-| ------------------ | ----------- |
-| MD5 / SHA1         | 弱雜湊         |
-| DES / 3DES         | 弱加密         |
-| RSA                | 量子脆弱演算法     |
-| ECC                | 量子脆弱        |
-| AES ECB            | 不安全模式       |
-| AES CBC 無 IV       | IV 缺失       |
-| Hardcoded Key      | 硬編碼密鑰       |
-| Hardcoded Password | 硬編碼密碼       |
-| Weak RNG           | 使用 `random` |
-| PBKDF2 iterations  | 迭代次數不足      |
+* 🔍 **多語言 AST 深度掃描**：支援 `Python`, `Java`, `C/C++` 的語法樹（Abstract Syntax Tree）級別解析，精準定位加密資產。
+* 💻 **Web Dashboard**：使用 **Streamlit** 提供互動式介面：提供多檔案掃描、資料夾掃描、風險統計圖、掃描結果表、AI 分析助手功能。
+* 🧠 **AI 智能修復 (BYOK 模式)**：內建 Gemini 3.5-flash / 3.1-pro 模型。採用「自攜金鑰 (Bring Your Own Key)」設計，金鑰僅存於本地記憶體，確保企業級原始碼與金鑰的絕對安全。
+* 📊 **視覺化資安儀表板**：使用 Plotly 動態生成 PQC 遷移與弱點風險分佈圓餅圖，風險層級一目了然。
+* 📝 **CBOM 報告生成**：一鍵匯出符合標準的加密資產軟體物料清單（Cryptographic Bill of Materials, CBOM）JSON 報表。
+* 🚀 **極致的可攜性**：提供 **Windows & macOS 雙系統免安裝綠色包**，隨插即用，徹底告別 C++ 編譯環境與 Python 相依性地獄。
 
 ---
 
-## 2️⃣ PQC 遷移盤點
+## ⚡ 快速上手 (Quick Start)
 
-工具會自動判斷 **PQC 遷移狀態**：
+對於一般使用者、稽核人員或評委，**完全不需要設定 Python 環境**，請直接使用我們準備好的免安裝版本：
 
-| 狀態                   | 說明               |
-| -------------------- | ---------------- |
-| PQC_READY            | 已使用 PQC 演算法      |
-| VULNERABLE (QUANTUM) | RSA / ECC        |
-| VULNERABLE (CLASSIC) | MD5 / SHA1 / DES |
-| SAFE                 | AES 等抗量子演算法      |
-| CRITICAL_SECRET_LEAK | 硬編碼密鑰            |
+### 📥 1. 下載綠色免安裝包
+請前往本專案的 [Releases 頁面](../../releases) 下載對應您作業系統的壓縮檔：
+* **🍎 macOS 使用者**：下載 PQC-Scanner-MacOS.tar.gz
+* **💻 Windows 使用者**：下載 PQC-Scanner-Windows.zip
 
----
+### 🚀 2. 一鍵啟動
+1. 將下載的檔案解壓縮。
+2. 進入資料夾，雙擊啟動腳本：
+   * **Mac**: 雙擊 🚀啟動-Mac.command
+   * **Windows**: 雙擊 🚀啟動-Windows.bat
+3. 系統將自動打開預設瀏覽器並載入掃描器介面 (預設為 `http://localhost:8501`)。
 
-## 3️⃣ 支援 PQC 演算法偵測
-
-可識別：
-
-| PQC Algorithm      | 說明               |
-| ------------------ | ---------------- |
-| ML-KEM (Kyber)     | PQC Key Exchange |
-| ML-DSA (Dilithium) | PQC Signature    |
-
----
-
-## 4️⃣ Web Dashboard
-
-使用 **Streamlit** 提供互動式介面：
-
-功能包含：
-
-* 📂 多檔案掃描
-* 📁 資料夾掃描
-* 📊 風險統計圖
-* 📋 掃描結果表
-* 🤖 AI 分析助手
+### 🔑 3. 啟用 AI 助手
+本系統的 AI 諮詢功能需使用 Google Gemini API：
+1. 於系統左側欄點擊「🔑 如何獲取免費的 Gemini API Key？」查看申請教學。
+2. 將獲取的金鑰貼入系統設定欄位中。
+3. 選擇您欲使用的 AI 模型（推薦使用預設的 `gemini-3.5-flash`），即可開始進行代碼對話與漏洞修復諮詢！
 
 ---
 
-## 5️⃣ AI 安全顧問
+## 🛠️ 開發與建置指南 (For Developers)
 
-整合 **Gemini AI**，可直接詢問：
+若您希望參與本專案開發，或自行從原始碼建置系統，請參考以下說明。
 
-例如：
+### 系統需求
+* **Python 3.11** (強烈建議，以確保 tree-sitter-cpp 的預編譯套件相容性)
+* Git
 
-```
-哪些演算法需要優先遷移？
-```
+### 1. 取得程式碼與安裝依賴包
 
-```
-如何將 RSA 改為 PQC？
-```
-
-```
-這個專案的主要風險是什麼？
-```
-
-AI 會根據掃描結果提供建議。
-
----
-
-# 📊 風險視覺化
-
-掃描結果會自動生成 **Plotly 圓餅圖**：
-
-顯示：
-
-* 弱加密
-* PQC 遷移目標
-* 硬編碼密鑰
-* 安全資產
-
-幫助快速評估整體安全狀況。
-
----
-
-# 🧠 支援語言
-
-| Language | Parser      |
-| -------- | ----------- |
-| Python   | `ast`       |
-| Java     | `javalang`  |
-| C        | `pycparser` |
-
----
-
-# 🛠 安裝方式
-
-建議使用 **Python 虛擬環境**
-
-### 1️⃣ Clone 專案
+#### 複製專案原始碼
 
 ```
 git clone https://github.com/your-repo/PQC-AST-Scanner.git
 cd PQC-AST-Scanner
 ```
 
----
-
-### 2️⃣ 建立虛擬環境
-
-Windows
-
+#### 建立虛擬環境 (以 Mac/Linux 為例)
 ```
-python -m venv venv
-venv\Scripts\activate
-```
-
-Mac / Linux
-
-```
-python3 -m venv venv
+python3.11 -m venv venv
 source venv/bin/activate
 ```
 
----
-
-### 3️⃣ 安裝套件
-
+#### 安裝依賴套件
 ```
-pip install streamlit
-pip install pandas
-pip install plotly
-pip install javalang
-pip install pycparser
-pip install google-generativeai
-pip install numpy
+pip install -r requirements.txt
 ```
 
----
-
-# ▶️ 執行系統
-
-啟動 Web UI：
-
+### 2. 啟動開發伺服器
 ```
-streamlit run website.py
+streamlit run src/website.py
 ```
 
-瀏覽器將自動開啟：
-
+### 3. 自動化跨平台打包
+本專案提供了一鍵打包腳本 `build.sh`。當開發完成準備發佈新版本時，只需在根目錄執行：
 ```
-http://localhost:8501
+./build.sh
 ```
+腳本將會自動過濾環境暫存檔，組裝 src/ 程式碼與對應的系統環境，並在目錄下生成 PQC-Scanner-MacOS.tar.gz 與 PQC-Scanner-Windows.zip 供發布使用。
 
 ---
 
-# 📂 使用方式
+## 🎯 檢測項目與規則 (Supported Rules)
 
-## 方法 1：上傳檔案
-
-1️⃣ 點擊 **Upload Files**
-
-2️⃣ 上傳原始碼
-
-3️⃣ 點擊 **開始掃描**
-
----
-
-## 方法 2：掃描資料夾
-
-輸入：
-
-```
-C:/Users/Project/src
-```
-
-點擊：
-
-```
-直接掃描該目錄
-```
-
-系統會自動：
-
-* 遞迴掃描
-* 分析所有程式碼
-* 產生安全報告
-
----
-
-# 📋 掃描結果
-
-每個發現包含：
-
-| 欄位            | 說明     |
-| ------------- | ------ |
-| RuleID        | 規則編號   |
-| Type          | 問題類型   |
-| Location      | 檔案位置   |
-| CodeSnippet   | 程式碼片段  |
-| Message       | 問題描述   |
-| FixSuggestion | 修復建議   |
-| PQC_Status    | PQC 狀態 |
-
----
-
-# 🔐 偵測範例
-
-弱 Hash：
-
-```python
-hashlib.md5(data)
-```
-
-偵測結果：
-
-```
-RuleID: B324
-Type: WEAK_HASH_MD5
-Fix: Replace with SHA256
-```
-
----
-
-AES ECB：
-
-```python
-AES.new(key, AES.MODE_ECB)
-```
-
-偵測：
-
-```
-RuleID: B413_AES_WEAK
-```
-
----
-
-硬編碼密鑰：
-
-```python
-api_key = "123456789ABCDEF"
-```
-
-偵測：
-
-```
-RuleID: B702_HARDCODED_KEY
-```
-
----
-
-# 📊 專案結構
-
-```
-PQC-AST-Scanner
-│
-├─ scanner.py
-│   AST 掃描核心
-│
-├─ website.py
-│   Streamlit Web UI
-│
-├─ README.md
-│
-└─ requirements.txt
-```
-
----
+本系統目前可精準識別以下安全風險：
+* **硬編碼機密 (Hardcoded Secrets)**：包含 API Tokens, Cloud Credentials, Passwords (對應 B702, B708 規範)
+* **弱加密演算法 (Weak Crypto)**：檢測明文使用的 DES, MD5, SHA1 等過時演算法
+* **PQC 遷移目標盤體 (PQC Transition)**：全面盤點傳統 RSA, ECC 等不具備抗量子能力的加密資產
+* **不良安全實作 (Insecure Implementation)**：弱隨機數生成源 (Weak Random)、不足的 Salt 長度、高風險 GCM Nonce 重複使用風險
