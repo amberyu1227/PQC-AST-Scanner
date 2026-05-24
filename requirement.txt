@@ -1,0 +1,8 @@
+streamlit
+pandas
+numpy
+plotly
+google-genai
+javalang
+tree-sitter
+tree-sitter-cpp
