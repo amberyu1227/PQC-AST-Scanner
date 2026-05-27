@@ -135,7 +135,7 @@ with st.sidebar:
             st.error(f"路徑無效，請檢查：{clean_path}")
                 
 # --- 3. 主內容區：對話與圖表 (6:4 比例) ---
-chat_col, chart_col = st.columns([6, 4], gap="medium")
+chart_col, chat_col = st.columns([6, 4], gap="medium")
 
 # 【中間：對話區】
 with chat_col:
